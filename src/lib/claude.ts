@@ -30,16 +30,25 @@ function parseFiles(text: string): GenFile[] {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Ask Claude with automatic retry + exponential backoff on rate-limit / overload errors */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
+}
+
 async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<string> {
   try {
-    // 25s per-call hard timeout — protects against Vercel's 60s function limit
-    const timeoutId = setTimeout(() => { throw new Error('Claude call timed out after 25s'); }, 25000);
-    const msg = await client.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    clearTimeout(timeoutId);
+    const msg = await withTimeout(
+      client.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      25000,
+      'Claude API call',
+    );
     return msg.content[0].type === 'text' ? msg.content[0].text : '';
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status;

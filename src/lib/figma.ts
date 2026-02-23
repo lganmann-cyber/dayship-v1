@@ -101,22 +101,26 @@ export async function fetchFigmaData(
     );
   }
 
-  // Use manual AbortController for broader compatibility across runtimes
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
-
+  // Race the fetch against a 20s timeout
   let res: Response;
   try {
-    res = await fetch(`https://api.figma.com/v1/files/${fileKey}`, {
-      headers: { 'X-Figma-Token': token },
-      signal: controller.signal,
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { controller.abort(); reject(new Error('Figma API timed out. Check your connection and try again.')); }, 20000);
     });
+    res = await Promise.race([
+      fetch(`https://api.figma.com/v1/files/${fileKey}`, {
+        headers: { 'X-Figma-Token': token },
+        signal: controller.signal,
+      }),
+      timeoutPromise,
+    ]).finally(() => clearTimeout(timer!));
   } catch (err) {
-    clearTimeout(timer);
-    if ((err as Error).name === 'AbortError') throw new Error('Figma API timed out. Check your internet connection and try again.');
-    throw new Error(`Could not reach Figma API: ${(err as Error).message}`);
+    const msg = (err as Error).message;
+    if (msg.includes('timed out')) throw new Error(msg);
+    throw new Error(`Could not reach Figma API: ${msg}`);
   }
-  clearTimeout(timer);
 
   if (res.status === 400) throw new Error(`Figma API rejected the request. The file key "${fileKey}" may be invalid — copy the URL directly from your browser while the file is open.`);
   if (res.status === 401) throw new Error('Figma token invalid. Generate a new one at figma.com → Account Settings → Personal access tokens.');
