@@ -34,7 +34,7 @@ async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<stri
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 8000,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
     return msg.content[0].type === 'text' ? msg.content[0].text : '';
@@ -56,7 +56,7 @@ async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<stri
 }
 
 /** Pause between consecutive Claude calls to stay under TPM/RPM limits */
-const INTER_CALL_DELAY = 1500; // ms
+const INTER_CALL_DELAY = 800; // ms — kept short to fit within Vercel 60s limit
 
 /* ═══════════════════════════════════════════════════════════════════
    FIGMA → WORDPRESS THEME

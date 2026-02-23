@@ -6,7 +6,7 @@ import { buildFiles } from '@/lib/files';
 import { Project } from '@/lib/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // 5 minutes — configured in vercel.json
+export const maxDuration = 60;
 
 /* ── SSE helpers ── */
 function sseEvent(controller: ReadableStreamDefaultController, data: object) {
