@@ -6,7 +6,7 @@ import { buildFiles } from '@/lib/files';
 import { Project } from '@/lib/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 180; // 3 minutes for Claude generation
+export const maxDuration = 300; // 5 minutes — configured in vercel.json
 
 /* ── SSE helpers ── */
 function sseEvent(controller: ReadableStreamDefaultController, data: object) {
@@ -163,11 +163,13 @@ export async function POST(req: NextRequest) {
   });
 
   return new Response(stream, {
+    status: 200,
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Transfer-Encoding': 'chunked',
     },
   });
 }

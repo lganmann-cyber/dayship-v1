@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    'node-html-parser',
+    '@anthropic-ai/sdk',
+    'jszip',
+  ],
 };
 
 export default nextConfig;
