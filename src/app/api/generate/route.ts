@@ -91,12 +91,13 @@ export async function POST(req: NextRequest) {
 
           let siteData;
           try {
-            siteData = await crawlSite(source, 30, (msg) => {
+            // Cap at 12 pages so HTML generation fits within Vercel's 60s function limit
+            siteData = await crawlSite(source, 12, (msg) => {
               send({ type: 'status', message: msg, progress: 12 });
             });
             send({
               type: 'status',
-              message: `Crawl complete — ${siteData.pages.length} pages discovered on ${new URL(siteData.rootUrl).hostname}`,
+              message: `Crawl complete — ${siteData.pages.length} pages found (generating all ${siteData.pages.length})`,
               progress: 22,
             });
           } catch (fetchErr) {

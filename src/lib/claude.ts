@@ -32,11 +32,14 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 /** Ask Claude with automatic retry + exponential backoff on rate-limit / overload errors */
 async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<string> {
   try {
+    // 25s per-call hard timeout — protects against Vercel's 60s function limit
+    const timeoutId = setTimeout(() => { throw new Error('Claude call timed out after 25s'); }, 25000);
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
+    clearTimeout(timeoutId);
     return msg.content[0].type === 'text' ? msg.content[0].text : '';
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status;
@@ -366,8 +369,8 @@ RULES FOR ALL PAGES:
 
   const files: GenFile[] = [];
 
-  /* ── Generate HTML pages in batches of 4 ── */
-  const BATCH = 4;
+  /* ── Generate HTML pages in batches of 6 (fewer calls = faster on Vercel) ── */
+  const BATCH = 6;
   const batches: PageData[][] = [];
   for (let i = 0; i < allPages.length; i += BATCH) batches.push(allPages.slice(i, i + BATCH));
 

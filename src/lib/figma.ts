@@ -35,8 +35,9 @@ function normalizeName(raw: string): string {
 
 /** Extract file key from any Figma URL variant */
 export function extractFigmaFileKey(url: string): string | null {
-  // Handles: /design/KEY, /file/KEY, /proto/KEY
-  const m = url.match(/figma\.com\/(?:design|file|proto)\/([a-zA-Z0-9]{5,50})/);
+  // Figma file keys are alphanumeric, may include hyphens, typically 10-40 chars
+  // Handles: /design/KEY, /file/KEY, /proto/KEY, /board/KEY, /slides/KEY
+  const m = url.match(/figma\.com\/(?:design|file|proto|board|slides)\/([a-zA-Z0-9_-]{5,60})/);
   return m ? m[1] : null;
 }
 
@@ -100,15 +101,29 @@ export async function fetchFigmaData(
     );
   }
 
-  const res = await fetch(`https://api.figma.com/v1/files/${fileKey}`, {
-    headers: { 'X-Figma-Token': token },
-    signal: AbortSignal.timeout(20000),
-  });
+  // Use manual AbortController for broader compatibility across runtimes
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
 
+  let res: Response;
+  try {
+    res = await fetch(`https://api.figma.com/v1/files/${fileKey}`, {
+      headers: { 'X-Figma-Token': token },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if ((err as Error).name === 'AbortError') throw new Error('Figma API timed out. Check your internet connection and try again.');
+    throw new Error(`Could not reach Figma API: ${(err as Error).message}`);
+  }
+  clearTimeout(timer);
+
+  if (res.status === 400) throw new Error(`Figma API rejected the request. The file key "${fileKey}" may be invalid — copy the URL directly from your browser while the file is open.`);
   if (res.status === 401) throw new Error('Figma token invalid. Generate a new one at figma.com → Account Settings → Personal access tokens.');
   if (res.status === 403) throw new Error('No access to this Figma file. Make sure you have at least "can view" permission.');
   if (res.status === 404) throw new Error('Figma file not found. Check the URL is correct and the file exists.');
-  if (!res.ok) throw new Error(`Figma API error ${res.status}: ${res.statusText}`);
+  if (res.status === 405) throw new Error(`Figma API returned 405 for key "${fileKey}". Try opening the file in Figma and copying the full URL from the browser address bar.`);
+  if (!res.ok) throw new Error(`Figma API error ${res.status} — ${res.statusText || 'unknown error'}. Try again or check your token.`);
 
   const data = await res.json() as Record<string, unknown>;
 
