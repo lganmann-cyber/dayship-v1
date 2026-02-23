@@ -30,25 +30,13 @@ function parseFiles(text: string): GenFile[] {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Ask Claude with automatic retry + exponential backoff on rate-limit / overload errors */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
-}
-
 async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<string> {
   try {
-    const msg = await withTimeout(
-      client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 4096,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      25000,
-      'Claude API call',
-    );
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
     return msg.content[0].type === 'text' ? msg.content[0].text : '';
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status;
@@ -67,8 +55,8 @@ async function ask(client: Anthropic, prompt: string, attempt = 0): Promise<stri
   }
 }
 
-/** Pause between consecutive Claude calls to stay under TPM/RPM limits */
-const INTER_CALL_DELAY = 800; // ms — kept short to fit within Vercel 60s limit
+/** Brief pause between consecutive Claude calls */
+const INTER_CALL_DELAY = 400; // ms
 
 /* ═══════════════════════════════════════════════════════════════════
    FIGMA → WORDPRESS THEME
@@ -150,82 +138,50 @@ OUTPUT FORMAT — use exactly this XML-like tag format:
   files.push(...parseFiles(dsText));
   onProgress('Design system complete ✓', 45);
 
-  const sharedPhpCtx = `Theme: "${projectName}" (slug: ${themeSlug}, text-domain: ${themeSlug})
-Primary: ${primaryHex} | Secondary: ${secondaryHex} | Font: ${primaryFont}
-Figma sections: ${sectionList} | Components: ${componentList}
-RULES: esc_html()/esc_url()/esc_attr()/wp_kses_post() on all output. __()/${themeSlug} for strings. get_field() for ACF. No TODOs.`;
-
-  /* ── Call 2a: Setup + Layout templates (functions, header, footer) ── */
+  /* ── Call 2: All PHP Templates (single focused call) ── */
   await sleep(INTER_CALL_DELAY);
-  onProgress('Generating functions.php, header.php, footer.php…', 48);
+  onProgress('Generating WordPress PHP templates…', 48);
 
-  const tpl2aText = await ask(client, `WordPress theme developer. Generate 3 COMPLETE PHP files.
-${sharedPhpCtx}
+  const phpCtx = `Theme: "${projectName}" slug:${themeSlug} text-domain:${themeSlug} primary:${primaryHex} font:${primaryFont}
+Components: ${componentList.slice(0, 100)} | Sections: ${sectionList.slice(0, 100)}
+Rules: esc_html/esc_url/esc_attr/wp_kses_post on all output. __()/${themeSlug} for strings. get_field() ACF.`;
+
+  const tplText = await ask(client, `WordPress theme developer. Generate COMPLETE production PHP files for theme "${projectName}".
+${phpCtx}
 
 <file name="functions.php">
-<?php
-Complete functions.php: theme_setup() (title-tag, post-thumbnails, html5, custom-logo, nav-menus primary+footer, wide-alignment, responsive-embeds). wp_enqueue_scripts: tokens.css, style.css (dep tokens), js/main.js defer. Register CPTs: ${themeSlug}_service, ${themeSlug}_team, ${themeSlug}_testimonial (all public, has_archive, title+editor+thumbnail). Register sidebar primary-sidebar. Image sizes: hero 1600x600 crop, card-thumbnail 800x500 crop, team-avatar 400x400 crop. Excerpt 25 words. Remove generator. wp_localize_script ajaxurl+nonce.
+<?php theme_setup(title-tag,thumbnails,html5,custom-logo,menus primary+footer,wide-alignment). enqueue: tokens.css, style.css(dep:tokens), js/main.js(defer). CPTs: ${themeSlug}_service,${themeSlug}_team,${themeSlug}_testimonial (public,has_archive,thumbnail). sidebar:primary-sidebar. img sizes: hero 1600x600,card 800x500,avatar 400x400. excerpt 25w. remove generator. localize ajaxurl+nonce.
 </file>
-
 <file name="header.php">
-<?php Complete header.php: DOCTYPE html, html language_attributes(), head (charset, viewport, title-tag, wp_head()). body_class(). Sticky <header class="site-header js-header">: .container .nav__inner > .nav__logo (custom_logo fallback bloginfo name+tagline), <button class="nav__toggle js-nav-toggle" aria-expanded="false">☰</button>, <ul class="nav__links" id="nav-links"> wp_nav_menu(primary, depth 2, li_class nav__item, a_class nav__link). Open <main id="main" class="site-main">.
+<?php DOCTYPE html, html language_attributes(), head(charset,viewport,title,wp_head()). body_class(). sticky header.site-header > .container.nav__inner > .nav__logo(custom_logo||bloginfo name), button.nav__toggle.js-nav-toggle(aria-expanded=false)☰, ul.nav__links#nav-links wp_nav_menu(primary). open main#main.site-main.
 </file>
-
 <file name="footer.php">
-<?php Complete footer.php: </main>. <footer class="site-footer"> .container .footer__grid (footer__brand: logo+tagline+social links from get_theme_mod; footer__nav: wp_nav_menu footer; footer__services: WP_Query ${themeSlug}_service 4 items; footer__contact: get_theme_mod phone+email). .footer__bottom: copyright year + bloginfo name + privacy/terms pages. wp_footer(). </body></html>.
-</file>`);
-
-  files.push(...parseFiles(tpl2aText));
-  onProgress('Layout templates done ✓', 55);
-
-  /* ── Call 2b: Page templates ── */
-  await sleep(INTER_CALL_DELAY);
-  onProgress('Generating page.php, single.php, archive.php, index.php…', 57);
-
-  const tpl2bText = await ask(client, `WordPress theme developer. Generate 4 COMPLETE PHP template files.
-${sharedPhpCtx}
-
+<?php close main. footer.site-footer > .container.footer__grid (footer__brand logo+tagline+social get_theme_mod; footer__nav wp_nav_menu footer; footer__services WP_Query ${themeSlug}_service 4 posts; footer__contact phone+email get_theme_mod). footer__bottom copyright+bloginfo name. wp_footer(). close body+html.
+</file>
 <file name="page.php">
-<?php get_header(); the_post(); ACF have_rows('page_sections') flexible content loop. Cases: 'hero' (get_field heading/subtext/bg_image/cta_primary_label+url/cta_secondary_label+url), 'features_grid' (get_rows items: icon/title/desc), 'testimonials' (get_rows: quote/author/role/photo), 'cta_banner' (heading/desc/cta_label/cta_url), 'services_grid' (WP_Query ${themeSlug}_service 6 posts), 'team_grid' (WP_Query ${themeSlug}_team 8 posts), 'content_block' (wysiwyg). Fallback to the_content(). get_footer();
+<?php get_header();the_post(); ACF have_rows('page_sections') loop: hero(heading/subtext/bg_image/cta_primary+secondary), features_grid(items repeater icon/title/desc), testimonials(quote/author/photo), cta_banner(heading/desc/url), services_grid(WP_Query ${themeSlug}_service 6), team_grid(WP_Query ${themeSlug}_team 8), content_block(wysiwyg). fallback the_content(). get_footer();
 </file>
-
 <file name="single.php">
-<?php get_header(); the_post(); Full single post: featured image hero, .container article with post_class, breadcrumb (Home > Category > Title), .post__header (h1 the_title, .post__meta: author avatar+name, get_the_date, reading-time from str_word_count/200), the_content(), .post__tags get_the_tags(), related posts WP_Query same first category 3 posts exclude current using get_template_part, comments_template(); get_footer();
+<?php get_header();the_post(); article.post_class: featured image hero, breadcrumb Home>Cat>Title, h1 the_title, post__meta(author+date+reading-time), the_content(), post__tags, related WP_Query same-cat 3 posts get_template_part, comments_template(). get_footer();
 </file>
-
 <file name="archive.php">
-<?php get_header(); .archive-hero: the_archive_title h1, the_archive_description p. .container .blog__grid: while have_posts() { the_post(); get_template_part('template-parts/card-post'); } No posts: esc_html 'No posts found'. the_posts_pagination. get_footer();
+<?php get_header(); archive-hero(the_archive_title,the_archive_description); blog__grid while(have_posts()){the_post();get_template_part('template-parts/card-post');} the_posts_pagination(); get_footer();
 </file>
-
-<file name="index.php">
-<?php get_header(); .blog-page-hero: h1 'Blog', bloginfo tagline. .container .blog__layout: .blog__grid (while have_posts() get_template_part) + .blog__sidebar (if is_active_sidebar primary-sidebar: dynamic_sidebar; else: WP_Query recent 5 posts list + wp_list_categories). the_posts_pagination. get_footer();
-</file>`);
-
-  files.push(...parseFiles(tpl2bText));
-  onProgress('Page templates done ✓', 63);
-
-  /* ── Call 2c: Utility templates ── */
-  await sleep(INTER_CALL_DELAY);
-  onProgress('Generating search.php, 404.php, card-post.php…', 65);
-
-  const tpl2cText = await ask(client, `WordPress theme developer. Generate 3 COMPLETE PHP files.
-${sharedPhpCtx}
-
 <file name="search.php">
-<?php get_header(); .search-hero: h1 sprintf Results for: get_search_query(), p found_posts count. get_search_form(). .container .blog__grid: while have_posts() get_template_part. No results: h2 Nothing found, suggestions: check spelling, try fewer keywords, browse categories. the_posts_pagination. get_footer();
+<?php get_header(); search-hero h1 sprintf("Results for %s",get_search_query()) + found_posts count; get_search_form(); blog__grid loop; no-results message; the_posts_pagination(); get_footer();
 </file>
-
 <file name="404.php">
-<?php get_header(); .error-page .container: 🔍 emoji, h1 Page not found, descriptive paragraph. Two .btn links: Back to Home (home_url()) and Contact Us (get_permalink(get_page_by_path('contact'))). get_search_form(). .error-suggestions h3 You might like: wp_list_pages recent 6 pages. get_footer();
+<?php get_header(); error-page: 🔍 h1 "Page not found" p desc; .btn Back(home_url()) .btn--outline Contact(get_permalink(get_page_by_path('contact'))); get_search_form(); get_footer();
 </file>
-
+<file name="index.php">
+<?php get_header(); blog-hero h1 Blog; blog__layout: blog__grid(have_posts loop get_template_part)+blog__sidebar(dynamic_sidebar||recent-posts fallback); the_posts_pagination(); get_footer();
+</file>
 <file name="template-parts/card-post.php">
-<?php // Card partial — call via get_template_part('template-parts/card-post')
-Full <article class="blog__card <?php echo esc_attr(implode(' ',get_post_class('',get_the_ID()))); ?>">: .blog__card-thumb a (the_post_thumbnail card-thumbnail or placeholder div), .blog__card-body (.blog__card-meta: category link esc_html + time datetime), h2 .blog__card-title > a the_title, p .blog__card-excerpt wp_trim_words(get_the_excerpt(),20), a .btn.btn--ghost Read more →. All escaping. ?>
+<?php article.blog__card.post_class: .blog__card-thumb a>the_post_thumbnail('card-thumbnail'); .blog__card-body: .blog__card-meta(category link+time datetime); h2.blog__card-title>a the_title; p.blog__card-excerpt wp_trim_words(get_the_excerpt(),20); a.btn.btn--ghost "Read more →". All esc_* functions.
 </file>`);
 
-  files.push(...parseFiles(tpl2cText));
-  onProgress('Utility templates done ✓', 70);
+  files.push(...parseFiles(tplText));
+  onProgress('PHP templates done ✓', 68);
 
   /* ── Call 3: Config & JS ── */
   await sleep(INTER_CALL_DELAY);
