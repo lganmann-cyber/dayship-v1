@@ -13,6 +13,24 @@ interface GenerateParams {
   client?: string;
 }
 
+// Simulated progress steps shown while Claude works
+const FIGMA_STEPS = [
+  [5,  'Connecting to Figma API…'],
+  [15, 'Extracting colours, typography & components…'],
+  [28, 'Generating design system (tokens.css + style.css)…'],
+  [50, 'Generating WordPress PHP templates…'],
+  [72, 'Generating ACF fields and JavaScript…'],
+  [90, 'Packaging files…'],
+] as const;
+
+const URL_STEPS = [
+  [5,  'Crawling site pages…'],
+  [18, 'Analysing structure, colours & fonts…'],
+  [32, 'Generating HTML pages…'],
+  [65, 'Generating stylesheet and JavaScript…'],
+  [90, 'Packaging files…'],
+] as const;
+
 export function useGenerate() {
   const setProgress = useStore(s => s.setProjectProgress);
   const completeWithFiles = useStore(s => s.completeProjectWithFiles);
@@ -20,6 +38,24 @@ export function useGenerate() {
 
   const generate = useCallback(async (params: GenerateParams) => {
     const { projectId, mode, source, figmaToken, projectName, client } = params;
+    const steps = mode === 'figma' ? FIGMA_STEPS : URL_STEPS;
+
+    // Animate progress locally while API works
+    let stepIdx = 0;
+    const advance = () => {
+      if (stepIdx >= steps.length) return;
+      const [pct, msg] = steps[stepIdx++];
+      setProgress(projectId, msg, pct);
+    };
+
+    advance(); // step 0 immediately
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    // Schedule remaining steps at increasing intervals
+    steps.slice(1).forEach((_, i) => {
+      const delay = (i + 1) * (mode === 'figma' ? 9000 : 10000);
+      timers.push(setTimeout(advance, delay));
+    });
 
     try {
       const res = await fetch('/api/generate', {
@@ -28,46 +64,25 @@ export function useGenerate() {
         body: JSON.stringify({ mode, source, figmaToken, projectName, client }),
       });
 
-      if (!res.ok || !res.body) {
-        throw new Error(`API error ${res.status}: ${res.statusText}`);
+      timers.forEach(clearTimeout);
+
+      const data = await res.json() as { files?: OutputFile[]; error?: string };
+
+      if (!res.ok || data.error) {
+        failProject(projectId, data.error ?? `API error ${res.status}`);
+        return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
-
-          if (event.type === 'status') {
-            setProgress(
-              projectId,
-              event.message as string,
-              event.progress as number,
-            );
-          } else if (event.type === 'complete') {
-            completeWithFiles(projectId, event.files as OutputFile[]);
-          } else if (event.type === 'error') {
-            failProject(projectId, event.message as string);
-          }
-        }
+      if (!data.files?.length) {
+        failProject(projectId, 'No files returned from generation.');
+        return;
       }
+
+      completeWithFiles(projectId, data.files);
+
     } catch (err) {
-      failProject(projectId, err instanceof Error ? err.message : 'Generation failed');
+      timers.forEach(clearTimeout);
+      failProject(projectId, err instanceof Error ? err.message : 'Network error');
     }
   }, [setProgress, completeWithFiles, failProject]);
 
