@@ -1,26 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:       #f5f5f5;
+  --bg2:      #ffffff;
+  --bg3:      #f3f4f6;
+  --bg4:      #e5e7eb;
+  --border:   #e5e7eb;
+  --border2:  #d1d5db;
+  --text:     #111827;
+  --text2:    #374151;
+  --muted:    #6b7280;
+  --muted2:   #9ca3af;
+
+  /* Primary accent — orange */
+  --or:       #f97316;
+  --or-d:     #ea580c;
+  --or-lt:    #fff7ed;
+  --or-bg:    #ffedd5;
+  --or-bdr:   #fed7aa;
+
+  /* Secondary accent — teal */
+  --tl:       #0f766e;
+  --tl-lt:    #f0fdfa;
+  --tl-bdr:   #99f6e4;
+
+  /* Status colors */
+  --gr:       #16a34a;
+  --gr-lt:    #f0fdf4;
+  --gr-bdr:   #bbf7d0;
+  --am:       #d97706;
+  --am-lt:    #fffbeb;
+  --rd:       #dc2626;
+  --rd-lt:    #fef2f2;
+  --rd-bdr:   #fecaca;
+
+  /* Shadows */
+  --sh:  0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --sh2: 0 4px 16px rgba(0,0,0,.09), 0 2px 4px rgba(0,0,0,.04);
+  --sh3: 0 12px 40px rgba(0,0,0,.14);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 3px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.fade-up {
+  animation: fadeUp 160ms ease forwards;
 }
